@@ -1,0 +1,213 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gui's Book Mind Maps 2025</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center mb-6">Gui's Book Mind Maps 2025</h1>
+        
+        <!-- Form for adding/editing mind maps -->
+        <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+            <h2 class="text-xl font-semibold mb-4">Add New Book Mind Map</h2>
+            <p class="text-sm text-gray-600 mb-2">Note: For mind map links (e.g., Markmap files), use http:// or https:// URLs hosted on a web server (like GitHub Pages or Netlify). Google Drive links may not render mind maps correctly.</p>
+            <div class="space-y-4">
+                <input type="text" id="bookTitle" placeholder="Book Title" class="w-full p-2 border rounded">
+                <input type="text" id="author" placeholder="Author" class="w-full p-2 border rounded">
+                <textarea id="mindMapContent" placeholder="Mind Map Link (http:// or https://) or Description" class="w-full p-2 border rounded h-32"></textarea>
+                <div class="flex space-x-2">
+                    <button onclick="saveMindMap()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Save Mind Map</button>
+                    <button onclick="exportData()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Export Data</button>
+                    <input type="file" id="importFile" accept=".json" class="hidden">
+                    <button onclick="document.getElementById('importFile').click()" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">Import Data</button>
+                </div>
+            </div>
+            <input type="hidden" id="editIndex">
+        </div>
+
+        <!-- List of mind maps -->
+        <div id="mindMapList" class="space-y-4">
+            <!-- Mind maps will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <script>
+        // Load mind maps from localStorage on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            displayMindMaps();
+            document.getElementById('importFile').addEventListener('change', importData);
+        });
+
+        // Function to check if a string is a valid HTTP/HTTPS URL
+        function isValidURL(string) {
+            const urlPattern = /^(https?:\/\/)[\w-]+(\.[\w-]+)+([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?$/;
+            return urlPattern.test(string);
+        }
+
+        function saveMindMap() {
+            const bookTitle = document.getElementById('bookTitle').value.trim();
+            const author = document.getElementById('author').value.trim();
+            const mindMapContent = document.getElementById('mindMapContent').value.trim();
+            const editIndex = document.getElementById('editIndex').value;
+
+            if (!bookTitle || !author || !mindMapContent) {
+                alert('Please fill in book title, author, and mind map link or description.');
+                return;
+            }
+
+            // Warn if a file:// URL is entered
+            if (mindMapContent.startsWith('file://')) {
+                alert('Local file links (file://) are not supported in browsers for security reasons. Please use an http:// or https:// link, or enter a description instead.');
+                return;
+            }
+
+            // Warn if a Google Drive link is detected (basic check)
+            if (mindMapContent.includes('drive.google.com') && !mindMapContent.includes('uc?export=download')) {
+                alert('Google Drive links may not render mind maps correctly. Host the file on a web server (e.g., GitHub Pages, Netlify) for proper rendering, or use a direct download link.');
+            }
+
+            let mindMaps = JSON.parse(localStorage.getItem('mindMaps')) || [];
+
+            if (editIndex !== '') {
+                // Update existing mind map
+                mindMaps[editIndex] = { bookTitle, author, mindMapContent };
+            } else {
+                // Add new mind map
+                mindMaps.push({ bookTitle, author, mindMapContent });
+            }
+
+            localStorage.setItem('mindMaps', JSON.stringify(mindMaps));
+            clearForm();
+            displayMindMaps();
+        }
+
+        function displayMindMaps() {
+            const mindMapList = document.getElementById('mindMapList');
+            const mindMaps = JSON.parse(localStorage.getItem('mindMaps')) || [];
+            
+            mindMapList.innerHTML = '';
+            mindMaps.forEach((mindMap, index) => {
+                const div = document.createElement('div');
+                div.className = 'bg-white p-4 rounded-lg shadow-md';
+                
+                // Check if mindMapContent is a valid HTTP/HTTPS URL
+                const content = isValidURL(mindMap.mindMapContent)
+                    ? `<a href="${mindMap.mindMapContent}" target="_blank" class="text-blue-500 underline hover:text-blue-700">${mindMap.mindMapContent}</a>`
+                    : `<p class="text-gray-700">${mindMap.mindMapContent}</p>`;
+
+                div.innerHTML = `
+                    <h3 class="text-lg font-semibold">${mindMap.bookTitle}</h3>
+                    <p class="text-gray-600 mt-1">Author: ${mindMap.author}</p>
+                    <div class="text-gray-700 mt-2">${content}</div>
+                    <div class="mt-4 flex space-x-2">
+                        <button onclick="editMindMap(${index})" class="bg-yellow-500 text-white px-3 py-1 rounded hover:bg-yellow-600">Edit</button>
+                        <button onclick="deleteMindMap(${index})" class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600">Delete</button>
+                    </div>
+                `;
+                mindMapList.appendChild(div);
+            });
+        }
+
+        function editMindMap(index) {
+            const mindMaps = JSON.parse(localStorage.getItem('mindMaps')) || [];
+            const mindMap = mindMaps[index];
+            
+            document.getElementById('bookTitle').value = mindMap.bookTitle;
+            document.getElementById('author').value = mindMap.author;
+            document.getElementById('mindMapContent').value = mindMap.mindMapContent;
+            document.getElementById('editIndex').value = index;
+        }
+
+        function deleteMindMap(index) {
+            if (confirm('Are you sure you want to delete this mind map?')) {
+                let mindMaps = JSON.parse(localStorage.getItem('mindMaps')) || [];
+                mindMaps.splice(index, 1);
+                localStorage.setItem('mindMaps', JSON.stringify(mindMaps));
+                displayMindMaps();
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('bookTitle').value = '';
+            document.getElementById('author').value = '';
+            document.getElementById('mindMapContent').value = '';
+            document.getElementById('editIndex').value = '';
+        }
+
+        function exportData() {
+            const mindMaps = JSON.parse(localStorage.getItem('mindMaps')) || [];
+            const dataStr = JSON.stringify(mindMaps, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'mind_maps_data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedMindMaps = JSON.parse(e.target.result);
+                    if (!Array.isArray(importedMindMaps)) {
+                        throw new Error('Invalid data format');
+                    }
+                    localStorage.setItem('mindMaps', JSON.stringify(importedMindMaps));
+                    displayMindMaps();
+                    alert('Data imported successfully!');
+                } catch (error) {
+                    alert('Error importing data: Invalid JSON file.');
+                }
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>
